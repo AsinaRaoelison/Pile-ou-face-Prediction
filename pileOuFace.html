@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jeu du Pile ou Face</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Jeu du Pile ou Face</h1>
+    <p>Choisissez "pile" ou "face", puis cliquez sur Soumettre.</p>
+    <form id="coinFlipForm">
+      <label>
+        <input type="radio" name="userChoice" value="pile"> Pile
+      </label>
+      <label>
+        <input type="radio" name="userChoice" value="face"> Face
+      </label>
+      <br>
+      <button type="button" onclick="submitChoice()">Soumettre</button>
+    </form>
+    <div id="result"></div>
+    <button type="button" onclick="togglePrediction()">Afficher la prédiction du modèle</button>
+    <div id="prediction" style="display:none;"></div>
+    <div id="stats"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.0.0/dist/tf.min.js"></script>
+  <script>
+    const coinFlipData = [];
+    const numSamples = 1000;
+
+    // Génération aléatoire du jeu de données
+    for (let i = 0; i < numSamples; i++) {
+      const userChoice = Math.random() < 0.5 ? 0 : 1; // 0 pour "pile", 1 pour "face"
+      const result = Math.random() < 0.5 ? 0 : 1; // 0 pour "pile", 1 pour "face"
+      coinFlipData.push({ input: [userChoice], output: [result] });
+    }
+
+    // Conversion du jeu de données en tenseurs pour TensorFlow.js
+    const xs = coinFlipData.map(entry => entry.input);
+    const ys = coinFlipData.map(entry => entry.output);
+    const xsTensor = tf.tensor2d(xs);
+    const ysTensor = tf.tensor2d(ys);
+
+    // Création du modèle
+    const model = tf.sequential();
+    model.add(tf.layers.dense({ units: 8, inputShape: [1], activation: 'relu' }));
+    model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+    model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
+
+    // Entraînement du modèle
+    async function trainModel() {
+      await model.fit(xsTensor, ysTensor, { epochs: 50 });
+    }
+
+    // Lancer l'entraînement lorsque la page est chargée
+    trainModel();
+
+    let totalGames = 0;
+    let totalWins = 0;
+    let previousChoice = null;
+    let previousPrediction = null;
+
+    function submitChoice() {
+      const userChoice = document.querySelector('input[name="userChoice"]:checked');
+      if (userChoice) {
+        const result = coinFlip();
+        const outcome = userChoice.value === result ? 'gagné' : 'perdu';
+        document.getElementById('result').innerHTML = `Vous avez ${outcome} !`;
+
+        const prediction = model.predict(tf.tensor2d([[userChoice.value === 'pile' ? 0 : 1]]));
+        const modelResult = prediction.dataSync()[0] < 0.5 ? 0 : 1; // Convertir la prédiction en 0 ou 1
+        prediction.dispose();
+
+        const comparisonResult = result === (modelResult === 0 ? 'pile' : 'face') ? 'gagné' : 'perdu';
+        const predictionDiv = document.getElementById('prediction');
+        predictionDiv.style.display = 'block';
+        predictionDiv.innerHTML = `Le modèle prédit : ${modelResult === 0 ? 'pile' : 'face'}. Vous avez ${comparisonResult} par rapport au modèle.`;
+
+        if (outcome === 'gagné') {
+          totalWins++;
+        }
+        totalGames++;
+
+        updateStats();
+        
+        previousChoice = result;
+        previousPrediction = modelResult;
+      }
+    }
+
+    function coinFlip() {
+      return Math.random() < 0.5 ? 'pile' : 'face';
+    }
+
+    async function togglePrediction() {
+      const userChoice = document.querySelector('input[name="userChoice"]:checked');
+      if (!userChoice) {
+        alert('Veuillez choisir "pile" ou "face" avant de soumettre.');
+        return;
+      }
+
+      const userChoiceValue = userChoice.value;
+      const inputTensor = tf.tensor2d([[userChoiceValue === 'pile' ? 0 : 1]]);
+      const prediction = model.predict(inputTensor);
+      const result = prediction.dataSync()[0] < 0.5 ? 0 : 1; // Convertir la prédiction en 0 ou 1
+
+      const predictionDiv = document.getElementById('prediction');
+      predictionDiv.style.display = 'block';
+      predictionDiv.innerHTML = `Le modèle prédit : ${result === 0 ? 'pile' : 'face'}. Vous avez ${previousChoice === (result === 0 ? 'pile' : 'face') ? 'gagné' : 'perdu'} par rapport au modèle.`;
+    }
+
+    function updateStats() {
+      const winPercentage = (totalWins / totalGames) * 100;
+      const statsDiv = document.getElementById('stats');
+      statsDiv.innerHTML = `Statistiques de la partie : ${totalWins} victoires sur ${totalGames} (${winPercentage.toFixed(2)}% de victoires)`;
+    }
+  </script>
+</body>
+</html>
